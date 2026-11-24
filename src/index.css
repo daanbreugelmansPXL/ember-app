@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  accent-color: #f97316;
+  scrollbar-color: #475569 #07090e;
+  scrollbar-width: auto;
+  --icon-check: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'></polyline></svg>");
+}
+
+body {
+  background-color: #07090e;
+  color: #f1f5f9;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  min-height: 100dvh;
+}
+
+/* Custom accessible checkbox following modern-web-guidance checkbox guide */
+.ember-checkbox {
+  --checkbox-size: 1.25em;
+  --checkbox-icon-size: 0.75em;
+
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  inline-size: var(--checkbox-size);
+  aspect-ratio: 1;
+  margin: 0;
+  border: 1.5px solid #64748b;
+  border-radius: 0.25rem;
+  background-color: rgba(15, 23, 42, 0.75);
+  color: #f97316;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.ember-checkbox:hover:not(:disabled) {
+  border-color: #f97316;
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.2);
+}
+
+.ember-checkbox::before {
+  content: "";
+  inline-size: var(--checkbox-icon-size);
+  aspect-ratio: 1;
+  background-color: #07090e;
+  mask: var(--icon-check) no-repeat center / contain;
+  scale: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ember-checkbox::before {
+    transition: scale 150ms ease;
+  }
+}
+
+@media (forced-colors: active) {
+  .ember-checkbox::before {
+    background-color: CanvasText;
+  }
+}
+
+.ember-checkbox:checked {
+  background-color: #f97316;
+  border-color: #f97316;
+}
+
+.ember-checkbox:checked::before {
+  scale: 1;
+}
+
+.ember-checkbox:focus-visible {
+  outline: 2px solid #fb923c;
+  outline-offset: 2px;
+}
+
+.ember-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
