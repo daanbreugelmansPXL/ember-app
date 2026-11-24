@@ -26,6 +26,7 @@ export default function App() {
   const [profile, setProfile] = useState(null);
   const [accessToken, setAccessToken] = useState(() => getStoredAccessToken());
 
+  const [taskLists, setTaskLists] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [completingIds, setCompletingIds] = useState(() => new Set());
@@ -37,6 +38,7 @@ export default function App() {
   const loadTasks = useCallback(async (token) => {
     if (!token) {
       setNeedsReconnect(true);
+      setTaskLists([]);
       setTasks([]);
       return;
     }
@@ -46,11 +48,13 @@ export default function App() {
     setNeedsReconnect(false);
 
     try {
-      const openTasks = await fetchOpenTasks(token);
+      const { lists, tasks: openTasks } = await fetchOpenTasks(token);
+      setTaskLists(lists);
       setTasks(openTasks);
     } catch (err) {
       if (err instanceof AuthExpiredError || err?.status === 401) {
         setNeedsReconnect(true);
+        setTaskLists([]);
         setTasks([]);
       } else {
         setTasksError(err?.message || "Kon taken niet ophalen.");
@@ -72,6 +76,7 @@ export default function App() {
       if (!firebaseUser) {
         setUser(null);
         setProfile(null);
+        setTaskLists([]);
         setTasks([]);
         setNeedsReconnect(false);
         setAuthReady(true);
@@ -160,12 +165,13 @@ export default function App() {
   const handleLogout = async () => {
     await logoutUser();
     setAccessToken(null);
+    setTaskLists([]);
     setTasks([]);
     setNeedsReconnect(false);
     setTasksError("");
   };
 
-  const handleCompleteTask = async (taskId) => {
+  const handleCompleteTask = async (listId, taskId) => {
     if (!accessToken) {
       setNeedsReconnect(true);
       return;
@@ -179,8 +185,8 @@ export default function App() {
     setTasksError("");
 
     try {
-      await completeGoogleTask(accessToken, taskId);
-      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+      await completeGoogleTask(accessToken, listId, taskId);
+      setTasks((prev) => prev.filter((t) => !(t.id === taskId && t.listId === listId)));
     } catch (err) {
       if (err instanceof AuthExpiredError || err?.status === 401) {
         setNeedsReconnect(true);
@@ -220,6 +226,7 @@ export default function App() {
 
       <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
         <TaskList
+          taskLists={taskLists}
           tasks={tasks}
           isLoading={isLoadingTasks}
           completingIds={completingIds}

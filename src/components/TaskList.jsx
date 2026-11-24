@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { RefreshCw, Unplug, CheckCircle2, AlertTriangle, Calendar, Loader2 } from "lucide-react";
 
 function formatDueDate(dueString) {
@@ -14,6 +15,7 @@ function formatDueDate(dueString) {
 }
 
 export function TaskList({
+  taskLists = [],
   tasks,
   isLoading,
   completingIds,
@@ -23,6 +25,18 @@ export function TaskList({
   onCompleteTask,
   onReconnect,
 }) {
+  const [selectedListId, setSelectedListId] = useState("ALL");
+
+  const activeListId =
+    selectedListId === "ALL" || taskLists.some((list) => list.id === selectedListId)
+      ? selectedListId
+      : "ALL";
+
+  const filteredTasks =
+    activeListId === "ALL"
+      ? tasks
+      : tasks.filter((task) => task.listId === activeListId);
+
   return (
     <section aria-labelledby="tasks-heading" className="space-y-4">
       {/* Toolbar */}
@@ -32,7 +46,7 @@ export function TaskList({
             Openstaande Taken
           </h1>
           <p className="text-xs text-slate-400">
-            Gesynchroniseerd met je standaard Google Tasks lijst
+            Gesynchroniseerd over al je Google Tasks lijsten
           </p>
         </div>
 
@@ -46,6 +60,51 @@ export function TaskList({
           <span>Ververs</span>
         </button>
       </div>
+
+      {/* Filter bar per task list */}
+      {!needsReconnect && taskLists.length > 0 && (
+        <div
+          role="group"
+          aria-label="Filter op takenlijst"
+          className="flex flex-wrap items-center gap-2"
+        >
+          <button
+            type="button"
+            onClick={() => setSelectedListId("ALL")}
+            aria-pressed={activeListId === "ALL"}
+            className={`inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 ${
+              activeListId === "ALL"
+                ? "border-orange-500/50 bg-orange-500/15 text-orange-200"
+                : "border-slate-800 bg-[#0d121d] text-slate-400 hover:border-slate-700 hover:text-slate-200"
+            }`}
+          >
+            <span>Alle</span>
+            <span className="text-[11px] opacity-75">{tasks.length}</span>
+          </button>
+
+          {taskLists.map((list) => {
+            const count = tasks.filter((task) => task.listId === list.id).length;
+            const isActive = activeListId === list.id;
+
+            return (
+              <button
+                key={list.id}
+                type="button"
+                onClick={() => setSelectedListId(list.id)}
+                aria-pressed={isActive}
+                className={`inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 ${
+                  isActive
+                    ? "border-orange-500/50 bg-orange-500/15 text-orange-200"
+                    : "border-slate-800 bg-[#0d121d] text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                }`}
+              >
+                <span>{list.title}</span>
+                <span className="text-[11px] opacity-75">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Reconnect Banner when OAuth token is missing or expired (401) */}
       {needsReconnect && (
@@ -103,7 +162,7 @@ export function TaskList({
       )}
 
       {/* Empty state */}
-      {!isLoading && !needsReconnect && tasks.length === 0 && !error && (
+      {!isLoading && !needsReconnect && filteredTasks.length === 0 && !error && (
         <div className="flex flex-col items-center justify-center rounded-lg border border-slate-800/80 bg-[#0b0f18]/80 px-6 py-12 text-center">
           <CheckCircle2 className="mb-3 h-8 w-8 text-orange-400/70" strokeWidth={1.5} />
           <p className="text-sm font-medium text-slate-200">
@@ -116,15 +175,15 @@ export function TaskList({
       )}
 
       {/* Task list */}
-      {!needsReconnect && tasks.length > 0 && (
+      {!needsReconnect && filteredTasks.length > 0 && (
         <ul className="space-y-2.5">
-          {tasks.map((task) => {
+          {filteredTasks.map((task) => {
             const isCompleting = completingIds.has(task.id);
             const dueFormatted = formatDueDate(task.due);
 
             return (
               <li
-                key={task.id}
+                key={`${task.listId}-${task.id}`}
                 className="rounded-md border border-slate-800/90 bg-[#0d121c]/90 transition-colors hover:border-amber-500/30"
               >
                 <label className="flex min-h-[44px] cursor-pointer items-start gap-3.5 px-4 py-3.5">
@@ -137,15 +196,22 @@ export function TaskList({
                         className="ember-checkbox"
                         checked={false}
                         disabled={isCompleting}
-                        onChange={() => onCompleteTask(task.id)}
+                        onChange={() => onCompleteTask(task.listId, task.id)}
                       />
                     )}
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium leading-snug text-slate-100">
-                      {task.title}
-                    </span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-sm font-medium leading-snug text-slate-100">
+                        {task.title}
+                      </span>
+                      {task.listTitle && (
+                        <span className="shrink-0 rounded border border-slate-700/80 bg-[#131a29] px-2 py-0.5 text-[11px] font-medium text-slate-300">
+                          {task.listTitle}
+                        </span>
+                      )}
+                    </div>
 
                     {(task.notes || dueFormatted) && (
                       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
