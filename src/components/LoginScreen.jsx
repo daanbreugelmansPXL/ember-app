@@ -26,7 +26,7 @@ export function LoginScreen({ onLogin, isLoggingIn, error }) {
           </div>
 
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-400/80">
-            Fase 1 · Skelet &amp; Sync
+            Fase 1.3 · Eigen Taken &amp; Agenda Sync
           </p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-100">
             EMBER
@@ -59,7 +59,7 @@ export function LoginScreen({ onLogin, isLoggingIn, error }) {
 
           <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
             <ShieldCheck className="h-3.5 w-3.5 text-slate-400" />
-            <span>Alleen toegang tot je Google Tasks lijst</span>
+            <span>One-way sync naar je primaire Google Agenda</span>
           </div>
         </div>
       </section>

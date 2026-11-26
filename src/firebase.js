@@ -16,7 +16,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const googleProvider = new GoogleAuthProvider();
-googleProvider.addScope("https://www.googleapis.com/auth/tasks");
+googleProvider.addScope("https://www.googleapis.com/auth/calendar.events");
 
 export const OAUTH_TOKEN_KEY = "ember_google_access_token";
 
@@ -67,7 +67,7 @@ export async function loginWithGoogle() {
   return { user: result.user, accessToken, profile };
 }
 
-export async function reconnectGoogleTasks() {
+export async function reconnectGoogleCalendar() {
   const result = await signInWithPopup(auth, googleProvider);
   const credential = GoogleAuthProvider.credentialFromResult(result);
   const accessToken = credential?.accessToken || null;
