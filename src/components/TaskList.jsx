@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { RefreshCw, Unplug, CheckCircle2, AlertTriangle, Calendar, Loader2 } from "lucide-react";
+import { groupTasksWithSubtasks } from "../services/googleTasks";
 
 function formatDueDate(dueString) {
   if (!dueString) return null;
@@ -36,6 +37,8 @@ export function TaskList({
     activeListId === "ALL"
       ? tasks
       : tasks.filter((task) => task.listId === activeListId);
+
+  const groupedTasks = groupTasksWithSubtasks(filteredTasks);
 
   return (
     <section aria-labelledby="tasks-heading" className="space-y-4">
@@ -162,7 +165,7 @@ export function TaskList({
       )}
 
       {/* Empty state */}
-      {!isLoading && !needsReconnect && filteredTasks.length === 0 && !error && (
+      {!isLoading && !needsReconnect && groupedTasks.length === 0 && !error && (
         <div className="flex flex-col items-center justify-center rounded-lg border border-slate-800/80 bg-[#0b0f18]/80 px-6 py-12 text-center">
           <CheckCircle2 className="mb-3 h-8 w-8 text-orange-400/70" strokeWidth={1.5} />
           <p className="text-sm font-medium text-slate-200">
@@ -175,9 +178,9 @@ export function TaskList({
       )}
 
       {/* Task list */}
-      {!needsReconnect && filteredTasks.length > 0 && (
+      {!needsReconnect && groupedTasks.length > 0 && (
         <ul className="space-y-2.5">
-          {filteredTasks.map((task) => {
+          {groupedTasks.map((task) => {
             const isCompleting = completingIds.has(task.id);
             const dueFormatted = formatDueDate(task.due);
 
@@ -230,6 +233,64 @@ export function TaskList({
                     )}
                   </div>
                 </label>
+
+                {task.subtasks.length > 0 && (
+                  <ul
+                    aria-label={`Subtaken van ${task.title}`}
+                    className="mb-2.5 ml-[25px] mr-3 space-y-0.5 border-l border-amber-500/20 pl-3.5"
+                  >
+                    {task.subtasks.map((subtask) => {
+                      const isSubCompleting = completingIds.has(subtask.id);
+                      const subDueFormatted = formatDueDate(subtask.due);
+
+                      return (
+                        <li key={`${subtask.listId}-${subtask.id}`} className="relative">
+                          <span
+                            aria-hidden="true"
+                            className="pointer-events-none absolute -left-3.5 top-[22px] h-px w-3 bg-amber-500/20"
+                          />
+                          <label className="flex min-h-[44px] cursor-pointer items-start gap-3 rounded px-2 py-2 transition-colors hover:bg-slate-800/40">
+                            <div className="flex h-5 items-center">
+                              {isSubCompleting ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-400" />
+                              ) : (
+                                <input
+                                  type="checkbox"
+                                  className="ember-checkbox text-[13px]"
+                                  checked={false}
+                                  disabled={isSubCompleting}
+                                  onChange={() => onCompleteTask(subtask.listId, subtask.id)}
+                                />
+                              )}
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <span className="block text-[13px] leading-snug text-slate-300">
+                                {subtask.title}
+                              </span>
+
+                              {(subtask.notes || subDueFormatted) && (
+                                <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-slate-400">
+                                  {subDueFormatted && (
+                                    <span className="inline-flex items-center gap-1 text-amber-300/80">
+                                      <Calendar className="h-2.5 w-2.5" />
+                                      <span>{subDueFormatted}</span>
+                                    </span>
+                                  )}
+                                  {subtask.notes && (
+                                    <span className="line-clamp-1 text-slate-500">
+                                      {subtask.notes}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </li>
             );
           })}

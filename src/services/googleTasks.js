@@ -9,6 +9,14 @@ export class AuthExpiredError extends Error {
   }
 }
 
+function compareByPosition(a, b) {
+  const posA = a.position ?? "";
+  const posB = b.position ?? "";
+  if (posA < posB) return -1;
+  if (posA > posB) return 1;
+  return 0;
+}
+
 async function googleTasksRequest(url, accessToken, options = {}) {
   if (!accessToken) {
     throw new AuthExpiredError("Geen actief Google OAuth token gevonden.");
@@ -55,22 +63,55 @@ export async function fetchOpenTasks(accessToken) {
       const data = await googleTasksRequest(url, accessToken, {
         method: "GET",
       });
-      const items = Array.isArray(data.items) ? data.items : [];
+      const rawItems = Array.isArray(data.items) ? data.items : [];
 
-      return items
+      const openItems = rawItems
         .filter((task) => task.status !== "completed" && task.title && task.title.trim() !== "")
         .map((task) => ({
           ...task,
           listId: list.id,
           listTitle: list.title,
-        }));
+        }))
+        .sort(compareByPosition);
+
+      return { rawItems, openItems };
     })
   );
 
+  const rawTasks = tasksPerList.flatMap((entry) => entry.rawItems);
+  console.log("Raw Google Tasks:", rawTasks);
+
   return {
     lists,
-    tasks: tasksPerList.flat(),
+    tasks: tasksPerList.flatMap((entry) => entry.openItems),
   };
+}
+
+export function groupTasksWithSubtasks(tasks) {
+  const nodeMap = new Map();
+  const nodes = tasks.map((task) => {
+    const node = { ...task, subtasks: [] };
+    nodeMap.set(`${task.listId}:${task.id}`, node);
+    return node;
+  });
+
+  const roots = [];
+  for (const node of nodes) {
+    const parentNode = node.parent ? nodeMap.get(`${node.listId}:${node.parent}`) : null;
+    if (parentNode) {
+      parentNode.subtasks.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  for (const node of nodes) {
+    if (node.subtasks.length > 1) {
+      node.subtasks.sort(compareByPosition);
+    }
+  }
+
+  return roots;
 }
 
 export async function completeGoogleTask(accessToken, listId, taskId) {
