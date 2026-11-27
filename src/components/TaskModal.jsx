@@ -1,32 +1,60 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Calendar, Clock, Flag, RotateCcw, Trash2, X } from "lucide-react";
 import {
-  CATEGORIES,
   SIZE_DURATIONS,
   TASK_SIZES,
   TIME_BLOCKS,
   TIME_BLOCK_ORDER,
   addDaysToDateString,
   formatDurationLabel,
+  getShortParentPrefix,
   getTaskDuration,
   getTodayDateString,
 } from "../utils/schedule";
+import { DEFAULT_USER_SETTINGS } from "../services/userSettings";
 
 export function TaskModal({
   editingTask,
   parentTask,
   allTasks,
+  categories = DEFAULT_USER_SETTINGS.categories,
   onClose,
   onSave,
   onDelete,
   isSaving,
 }) {
   const isEditing = Boolean(editingTask);
+  const isSubtask = Boolean(parentTask || editingTask?.parentId);
   const titleInputRef = useRef(null);
+  const frozenBlockUsageRef = useRef(null);
 
   const [title, setTitle] = useState(() => editingTask?.title || "");
+  const [notes, setNotes] = useState(() => editingTask?.notes || "");
+  const [calendarPrefix, setCalendarPrefix] = useState(() => {
+    if (!isSubtask) return "";
+    if (isEditing && typeof editingTask?.calendarPrefix === "string") {
+      return editingTask.calendarPrefix;
+    }
+    return getShortParentPrefix(parentTask?.title || "", 3);
+  });
+  const availableCategories = useMemo(() => {
+    const base =
+      Array.isArray(categories) && categories.length > 0
+        ? categories
+        : DEFAULT_USER_SETTINGS.categories;
+    const currentCat = editingTask?.category || parentTask?.category;
+    if (currentCat && !base.includes(currentCat)) {
+      return [...base, currentCat];
+    }
+    return base;
+  }, [categories, editingTask?.category, parentTask?.category]);
+
   const [category, setCategory] = useState(
-    () => editingTask?.category || parentTask?.category || "Studie"
+    () =>
+      editingTask?.category ||
+      parentTask?.category ||
+      categories[0] ||
+      "Studie"
   );
   const [size, setSize] = useState(() => editingTask?.size || "M");
   const [workDate, setWorkDate] = useState(() => editingTask?.workDate || "");
@@ -41,16 +69,6 @@ export function TaskModal({
   useEffect(() => {
     titleInputRef.current?.focus();
   }, []);
-
-  useEffect(() => {
-    const handleKeyDown = (event) => {
-      if (event.key === "Escape" && !isSaving) {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isSaving, onClose]);
 
   const todayStr = useMemo(() => getTodayDateString(), []);
   const tomorrowStr = useMemo(() => addDaysToDateString(todayStr, 1), [todayStr]);
@@ -90,7 +108,7 @@ export function TaskModal({
     setDurationOverride(null);
   };
 
-  const blockUsage = useMemo(() => {
+  const computedBlockUsage = useMemo(() => {
     if (!workDate || !timeBlock) return null;
     const block = TIME_BLOCKS[timeBlock];
     if (!block) return null;
@@ -98,6 +116,7 @@ export function TaskModal({
     const existingMinutes = allTasks
       .filter(
         (t) =>
+          !t.completed &&
           t.id !== editingTask?.id &&
           t.workDate === workDate &&
           t.timeBlock === timeBlock
@@ -119,11 +138,24 @@ export function TaskModal({
     };
   }, [allTasks, durationOverride, editingTask?.id, size, timeBlock, workDate]);
 
+  if (!isSaving) {
+    frozenBlockUsageRef.current = computedBlockUsage;
+  }
+  const blockUsage = isSaving ? frozenBlockUsageRef.current : computedBlockUsage;
+
+  const calendarPreview = useMemo(() => {
+    const cleanTitle = title.trim() || "Subtask title";
+    const cleanPrefix = calendarPrefix.trim();
+    return cleanPrefix ? `[ ] ${cleanPrefix}: ${cleanTitle}` : `[ ] ${cleanTitle}`;
+  }, [calendarPrefix, title]);
+
   const handleSubmit = (event) => {
     event.preventDefault();
+    if (isSaving) return;
+
     const trimmed = title.trim();
     if (!trimmed) {
-      setValidationError("Vul een titel in voor deze taak.");
+      setValidationError("Please enter a task title.");
       titleInputRef.current?.focus();
       return;
     }
@@ -131,6 +163,8 @@ export function TaskModal({
     setValidationError("");
     onSave({
       title: trimmed,
+      notes: notes.trim(),
+      calendarPrefix: isSubtask ? calendarPrefix.trim() : null,
       category,
       size,
       workDate: workDate && timeBlock ? workDate : null,
@@ -169,14 +203,14 @@ export function TaskModal({
               className="text-base font-semibold tracking-tight text-slate-100"
             >
               {isEditing
-                ? "Taak bewerken"
+                ? "Edit Task"
                 : parentTask
-                  ? "Nieuwe subtaak"
-                  : "Nieuwe taak"}
+                  ? "New Subtask"
+                  : "New Task"}
             </h2>
-            {parentTask && !isEditing && (
+            {parentTask && (
               <p className="mt-0.5 text-xs text-amber-300/80">
-                Subtaak onder: <span className="font-medium">{parentTask.title}</span>
+                Subtask under: <span className="font-medium">{parentTask.title}</span>
               </p>
             )}
           </div>
@@ -185,21 +219,21 @@ export function TaskModal({
             type="button"
             onClick={onClose}
             disabled={isSaving}
-            aria-label="Sluiten"
+            aria-label="Close"
             className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-slate-800 bg-[#101622] text-slate-400 transition-colors hover:border-slate-600 hover:text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 disabled:opacity-50"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-4 space-y-5">
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {/* Title */}
           <div>
             <label
               htmlFor="task-title-input"
               className="block text-xs font-medium uppercase tracking-wider text-slate-400"
             >
-              Titel
+              Title
             </label>
             <input
               ref={titleInputRef}
@@ -207,7 +241,7 @@ export function TaskModal({
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Bijv. Hoofdstuk 4 samenvatten"
+              placeholder="e.g. Summarize Chapter 4"
               maxLength={140}
               className="mt-1.5 w-full rounded-md border border-slate-700/80 bg-[#080b11] px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-orange-500/70 focus:outline-none focus:ring-1 focus:ring-orange-500/40"
             />
@@ -216,13 +250,67 @@ export function TaskModal({
             )}
           </div>
 
+          {/* Notes */}
+          <div>
+            <label
+              htmlFor="task-notes-input"
+              className="block text-xs font-medium uppercase tracking-wider text-slate-400"
+            >
+              Notes (optional)
+            </label>
+            <textarea
+              id="task-notes-input"
+              rows={2}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Short context or details so the title stays concise..."
+              maxLength={500}
+              className="mt-1.5 w-full resize-none rounded-md border border-slate-700/80 bg-[#080b11] px-3.5 py-2 text-xs leading-relaxed text-slate-100 placeholder:text-slate-500 focus:border-orange-500/70 focus:outline-none focus:ring-1 focus:ring-orange-500/40"
+            />
+          </div>
+
+          {/* Subtask Calendar Prefix */}
+          {isSubtask && (
+            <div className="rounded-md border border-slate-800/90 bg-[#090d15] px-3.5 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <label
+                  htmlFor="task-prefix-input"
+                  className="text-[11px] font-medium uppercase tracking-wider text-slate-400"
+                >
+                  Calendar prefix (optional)
+                </label>
+                {calendarPrefix && (
+                  <button
+                    type="button"
+                    onClick={() => setCalendarPrefix("")}
+                    className="cursor-pointer text-[11px] text-slate-400 hover:text-orange-300"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <input
+                id="task-prefix-input"
+                type="text"
+                value={calendarPrefix}
+                onChange={(e) => setCalendarPrefix(e.target.value)}
+                placeholder="No prefix"
+                maxLength={60}
+                className="mt-1.5 w-full rounded-md border border-slate-700/80 bg-[#080b11] px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:border-orange-500/70 focus:outline-none"
+              />
+              <p className="mt-1.5 truncate text-[11px] text-slate-500">
+                Calendar preview: <span className="text-slate-300">{calendarPreview}</span>
+              </p>
+            </div>
+          )}
+
           {/* Category */}
           <div>
             <span className="block text-xs font-medium uppercase tracking-wider text-slate-400">
-              Categorie
+              Category
             </span>
             <div className="mt-1.5 flex flex-wrap gap-2">
-              {CATEGORIES.map((cat) => {
+              {availableCategories.map((cat) => {
                 const active = category === cat;
                 return (
                   <button
@@ -247,7 +335,7 @@ export function TaskModal({
           <div>
             <div className="flex items-center justify-between">
               <span className="block text-xs font-medium uppercase tracking-wider text-slate-400">
-                Grootte &amp; Duur
+                Size &amp; Duration
               </span>
               {typeof durationOverride === "number" && (
                 <button
@@ -256,7 +344,7 @@ export function TaskModal({
                   className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-amber-300 hover:text-amber-200"
                 >
                   <RotateCcw className="h-3 w-3" />
-                  <span>Auto-fit ({durationOverride}m) resetten</span>
+                  <span>Reset auto-fit ({durationOverride}m)</span>
                 </button>
               )}
             </div>
@@ -287,12 +375,12 @@ export function TaskModal({
             </div>
           </div>
 
-          {/* Werkmoment (Work Date + Time Block) */}
+          {/* Work Block (Work Date + Time Block) */}
           <div className="rounded-md border border-slate-800/90 bg-[#090d15] p-3.5">
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-slate-300">
                 <Clock className="h-3.5 w-3.5 text-orange-400" />
-                <span>Werkmoment (optioneel)</span>
+                <span>Work Block (optional)</span>
               </span>
               {(workDate || timeBlock) && (
                 <button
@@ -300,7 +388,7 @@ export function TaskModal({
                   onClick={clearWorkMoment}
                   className="cursor-pointer text-[11px] font-medium text-slate-400 hover:text-orange-300"
                 >
-                  Wissen
+                  Clear
                 </button>
               )}
             </div>
@@ -308,7 +396,7 @@ export function TaskModal({
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
               <input
                 type="date"
-                aria-label="Werkdag"
+                aria-label="Work date"
                 value={workDate}
                 onChange={(e) => handleWorkDateChange(e.target.value)}
                 className="min-h-[36px] flex-1 rounded-md border border-slate-700/80 bg-[#080b11] px-3 py-1.5 text-xs text-slate-100 focus:border-orange-500/70 focus:outline-none"
@@ -322,7 +410,7 @@ export function TaskModal({
                     : "border-slate-800 bg-[#101622] text-slate-300 hover:border-slate-700"
                 }`}
               >
-                Vandaag
+                Today
               </button>
               <button
                 type="button"
@@ -333,7 +421,7 @@ export function TaskModal({
                     : "border-slate-800 bg-[#101622] text-slate-300 hover:border-slate-700"
                 }`}
               >
-                Morgen
+                Tomorrow
               </button>
             </div>
 
@@ -372,23 +460,23 @@ export function TaskModal({
               >
                 <span>
                   {blockUsage.block.label}: {blockUsage.totalAfter} /{" "}
-                  {blockUsage.block.durationMin} min gebruikt
+                  {blockUsage.block.durationMin} min used
                 </span>
                 {blockUsage.overflows && (
                   <span className="font-semibold text-amber-300">
-                    Past niet direct
+                    Exceeds block
                   </span>
                 )}
               </div>
             )}
           </div>
 
-          {/* Harde Deadline */}
+          {/* Hard Deadline */}
           <div className="rounded-md border border-slate-800/90 bg-[#090d15] p-3.5">
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-slate-300">
                 <Flag className="h-3.5 w-3.5 text-red-400" />
-                <span>Harde deadline (optioneel)</span>
+                <span>Hard Deadline (optional)</span>
               </span>
               {deadline && (
                 <button
@@ -396,7 +484,7 @@ export function TaskModal({
                   onClick={() => setDeadline("")}
                   className="cursor-pointer text-[11px] font-medium text-slate-400 hover:text-orange-300"
                 >
-                  Wissen
+                  Clear
                 </button>
               )}
             </div>
@@ -405,14 +493,14 @@ export function TaskModal({
               <Calendar className="h-4 w-4 shrink-0 text-slate-500" />
               <input
                 type="date"
-                aria-label="Harde deadline"
+                aria-label="Hard deadline"
                 value={deadline}
                 onChange={(e) => setDeadline(e.target.value)}
                 className="min-h-[36px] flex-1 rounded-md border border-slate-700/80 bg-[#080b11] px-3 py-1.5 text-xs text-slate-100 focus:border-orange-500/70 focus:outline-none"
               />
             </div>
             <p className="mt-1.5 text-[11px] text-slate-500">
-              Wordt in Google Agenda gesynchroniseerd als hele-dag event [DL].
+              Synced to Google Calendar as an all-day &quot;[!] (Size) Title&quot; event.
             </p>
           </div>
 
@@ -428,7 +516,7 @@ export function TaskModal({
                     className="inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-md border border-red-500/50 bg-red-600/20 px-3 py-1.5 text-xs font-semibold text-red-200 transition-colors hover:bg-red-600/35 disabled:opacity-50"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                    <span>Bevestig verwijderen</span>
+                    <span>Confirm delete</span>
                   </button>
                   <button
                     type="button"
@@ -436,7 +524,7 @@ export function TaskModal({
                     disabled={isSaving}
                     className="min-h-[38px] cursor-pointer rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
                   >
-                    Annuleer
+                    Cancel
                   </button>
                 </div>
               ) : (
@@ -447,7 +535,7 @@ export function TaskModal({
                   className="inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-md border border-slate-800 bg-[#101622] px-3 py-1.5 text-xs font-medium text-red-300/90 transition-colors hover:border-red-500/40 hover:bg-red-950/30 disabled:opacity-50"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  <span>Verwijderen</span>
+                  <span>Delete</span>
                 </button>
               )
             ) : (
@@ -461,7 +549,7 @@ export function TaskModal({
                 disabled={isSaving}
                 className="min-h-[40px] cursor-pointer rounded-md border border-slate-700/80 bg-[#101622] px-4 py-2 text-xs font-medium text-slate-300 transition-colors hover:border-slate-600 hover:text-slate-100 disabled:opacity-50"
               >
-                Annuleren
+                Cancel
               </button>
               <button
                 type="submit"
@@ -469,10 +557,10 @@ export function TaskModal({
                 className="min-h-[40px] cursor-pointer rounded-md border border-orange-400/40 bg-orange-600 px-4 py-2 text-xs font-semibold text-slate-950 transition-colors hover:bg-orange-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSaving
-                  ? "Opslaan..."
+                  ? "Saving..."
                   : isEditing
-                    ? "Wijzigingen opslaan"
-                    : "Taak aanmaken"}
+                    ? "Save Changes"
+                    : "Create Task"}
               </button>
             </div>
           </div>

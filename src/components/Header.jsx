@@ -1,12 +1,12 @@
-import { Flame, LogOut, Sparkles, Shield } from "lucide-react";
+import { Flame, LogOut, Settings, Shield, Sparkles } from "lucide-react";
 
-export function Header({ user, profile, onLogout }) {
-  const displayName = profile?.displayName || user?.displayName || "Avonturier";
+export function Header({ user, profile, onOpenSettings, onLogout }) {
+  const displayName = profile?.displayName || user?.displayName || "Adventurer";
   const level = profile?.level ?? 1;
   const xp = profile?.xp ?? 0;
 
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-800/80 bg-[#0a0e16]/90 backdrop-blur-md">
+    <header className="sticky top-0 z-20 border-b border-slate-800/80 bg-[#0a0e16]/90 backdrop-blur-md lg:hidden">
       <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
         {/* Brand */}
         <div className="flex items-center gap-2.5">
@@ -23,7 +23,7 @@ export function Header({ user, profile, onLogout }) {
           </div>
         </div>
 
-        {/* Stats & Logout */}
+        {/* Stats, Settings & Sign Out */}
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-[#101622] px-2.5 py-1.5 text-xs font-semibold text-amber-300">
             <Shield className="h-3.5 w-3.5 text-amber-400" />
@@ -37,12 +37,22 @@ export function Header({ user, profile, onLogout }) {
 
           <button
             type="button"
+            onClick={onOpenSettings}
+            aria-label="Settings"
+            title="Account Settings"
+            className="inline-flex min-h-[36px] min-w-[36px] cursor-pointer items-center justify-center rounded-md border border-slate-700/80 bg-[#101622] px-2.5 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:border-amber-500/40 hover:bg-slate-800/80 hover:text-orange-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400"
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </button>
+
+          <button
+            type="button"
             onClick={onLogout}
-            aria-label="Uitloggen"
+            aria-label="Sign Out"
             className="inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-md border border-slate-700/80 bg-[#101622] px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:border-slate-500 hover:bg-slate-800/80 hover:text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400"
           >
             <LogOut className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Uitloggen</span>
+            <span className="hidden sm:inline">Sign Out</span>
           </button>
         </div>
       </div>

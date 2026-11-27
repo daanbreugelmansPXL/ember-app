@@ -71,19 +71,34 @@ export function formatMinutes(totalMinutes) {
 }
 
 export function formatDurationLabel(minutes) {
-  if (!minutes || minutes < 60) return `${minutes} min`;
+  if (!minutes || minutes < 60) return `${minutes}m`;
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
-  return m === 0 ? `${h}u` : `${h}u ${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
+export function getShortParentPrefix(parentTitle, wordCount = 3) {
+  if (!parentTitle || typeof parentTitle !== "string") return "";
+  const words = parentTitle.trim().split(/\s+/).filter(Boolean);
+  return words.slice(0, wordCount).join(" ");
+}
+
+const brusselsDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Brussels",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 export function getTodayDateString() {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Brussels",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  return brusselsDateFormatter.format(new Date());
+}
+
+export function isTimestampTodayInBrussels(timestampMs) {
+  if (typeof timestampMs !== "number" || !Number.isFinite(timestampMs) || timestampMs <= 0) {
+    return false;
+  }
+  return brusselsDateFormatter.format(new Date(timestampMs)) === getTodayDateString();
 }
 
 export function addDaysToDateString(dateStr, days) {
@@ -101,7 +116,7 @@ export function formatShortDate(dateStr) {
   const [y, m, d] = dateStr.split("-").map(Number);
   if (!y || !m || !d) return dateStr;
   const date = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-  return date.toLocaleDateString("nl-NL", {
+  return date.toLocaleDateString("en-GB", {
     day: "numeric",
     month: "short",
     timeZone: "UTC",
@@ -222,6 +237,7 @@ export function computeAllSchedules(tasks) {
   const groups = new Map();
 
   for (const task of tasks) {
+    if (task.completed) continue;
     const key = getSlotKey(task.workDate, task.timeBlock);
     if (!key) continue;
     if (!groups.has(key)) {
@@ -242,7 +258,7 @@ export function computeAllSchedules(tasks) {
   return scheduleMap;
 }
 
-export function computeAutoFit(tasksInBlock, timeBlockId, incomingTaskId = null) {
+export function computeAutoFit(tasksInBlock, timeBlockId) {
   const block = TIME_BLOCKS[timeBlockId];
   if (!block) {
     return {
@@ -254,21 +270,13 @@ export function computeAutoFit(tasksInBlock, timeBlockId, incomingTaskId = null)
     };
   }
 
-  const sorted = sortBlockTasks(tasksInBlock);
-  const totalRequired = sorted.reduce((sum, t) => sum + getTaskDuration(t), 0);
+  const activeTasks = sortBlockTasks(tasksInBlock.filter((t) => !t.completed));
+  const totalRequired = activeTasks.reduce((sum, t) => sum + getTaskDuration(t), 0);
 
-  const fixedTasks = sorted.filter(
-    (t) => t.completed === true && t.id !== incomingTaskId
-  );
-  const scalableTasks = sorted.filter(
-    (t) => !(t.completed === true && t.id !== incomingTaskId)
-  );
-
-  const fixedDuration = fixedTasks.reduce((sum, t) => sum + getTaskDuration(t), 0);
-  const availableMin = Math.max(0, block.durationMin - fixedDuration);
+  const availableMin = block.durationMin;
   const totalSlots = Math.floor(availableMin / 15);
 
-  if (scalableTasks.length === 0 || scalableTasks.length > totalSlots) {
+  if (activeTasks.length === 0 || activeTasks.length > totalSlots) {
     return {
       possible: false,
       block,
@@ -278,76 +286,100 @@ export function computeAutoFit(tasksInBlock, timeBlockId, incomingTaskId = null)
     };
   }
 
-  const items = scalableTasks.map((task) => {
+  const totalOrig = activeTasks.reduce(
+    (sum, t) => sum + Math.max(15, getTaskDuration(t)),
+    0
+  );
+  const ratio = availableMin / totalOrig;
+
+  const items = activeTasks.map((task, index) => {
     const naturalDuration = SIZE_DURATIONS[task.size] ?? 60;
-    const maxSlots = Math.max(1, Math.floor(naturalDuration / 15));
+    const origDuration = Math.max(15, getTaskDuration(task));
+    const scaled = origDuration * ratio;
+    const floored = Math.max(15, Math.floor(scaled / 15) * 15);
     return {
+      index,
       task,
       naturalDuration,
-      oldDuration: getTaskDuration(task),
-      maxSlots,
-      weight: naturalDuration,
-      target: 0,
-      alloc: 1,
+      origDuration,
+      scaled,
+      duration: floored,
     };
   });
 
-  const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
+  let currentTotal = items.reduce((sum, item) => sum + item.duration, 0);
 
-  for (const item of items) {
-    item.target = (item.weight / totalWeight) * totalSlots;
-    item.alloc = Math.max(1, Math.min(item.maxSlots, Math.floor(item.target)));
-  }
-
-  let currentSlots = items.reduce((sum, item) => sum + item.alloc, 0);
-
-  while (currentSlots < totalSlots) {
-    let bestItem = null;
-    let bestScore = -Infinity;
-
+  while (currentTotal > availableMin) {
+    let candidate = null;
     for (const item of items) {
-      if (item.alloc >= item.maxSlots) continue;
-      const deficit = item.target - item.alloc;
+      if (item.duration <= 15) continue;
+      if (!candidate) {
+        candidate = item;
+        continue;
+      }
+      const excessItem = item.duration - item.scaled;
+      const excessCand = candidate.duration - candidate.scaled;
       if (
-        deficit > bestScore ||
-        (deficit === bestScore && bestItem && item.weight > bestItem.weight)
+        excessItem > excessCand ||
+        (excessItem === excessCand &&
+          (item.duration > candidate.duration ||
+            (item.duration === candidate.duration && item.index > candidate.index)))
       ) {
-        bestScore = deficit;
-        bestItem = item;
+        candidate = item;
       }
     }
-
-    if (!bestItem) break;
-    bestItem.alloc += 1;
-    currentSlots += 1;
+    if (!candidate) break;
+    candidate.duration -= 15;
+    currentTotal -= 15;
   }
 
-  while (currentSlots > totalSlots) {
-    let worstItem = null;
-    let worstScore = Infinity;
-
+  while (currentTotal < availableMin) {
+    let candidate = null;
     for (const item of items) {
-      if (item.alloc <= 1) continue;
-      const deficit = item.target - item.alloc;
-      if (deficit < worstScore) {
-        worstScore = deficit;
-        worstItem = item;
+      if (!candidate) {
+        candidate = item;
+        continue;
+      }
+      const itemUnderOrig = item.duration < item.origDuration;
+      const candUnderOrig = candidate.duration < candidate.origDuration;
+      if (itemUnderOrig !== candUnderOrig) {
+        if (itemUnderOrig) candidate = item;
+        continue;
+      }
+      const deficitItem = item.scaled - item.duration;
+      const deficitCand = candidate.scaled - candidate.duration;
+      if (
+        deficitItem > deficitCand ||
+        (deficitItem === deficitCand &&
+          (item.origDuration > candidate.origDuration ||
+            (item.origDuration === candidate.origDuration &&
+              item.index < candidate.index)))
+      ) {
+        candidate = item;
       }
     }
-
-    if (!worstItem) break;
-    worstItem.alloc -= 1;
-    currentSlots -= 1;
+    if (!candidate) break;
+    candidate.duration += 15;
+    currentTotal += 15;
   }
 
+  let cursor = block.startMin;
   const adjustments = items.map((item) => {
-    const newDuration = item.alloc * 15;
+    const newDuration = item.duration;
+    const startMin = cursor;
+    const endMin = cursor + newDuration;
+    cursor = endMin;
+
     return {
       taskId: item.task.id,
       title: item.task.title,
       size: item.task.size,
-      oldDuration: item.oldDuration,
+      oldDuration: item.origDuration,
       newDuration,
+      startMin,
+      endMin,
+      startLabel: formatMinutes(startMin),
+      endLabel: formatMinutes(endMin),
       durationOverride: newDuration === item.naturalDuration ? null : newDuration,
     };
   });
@@ -413,9 +445,60 @@ export function groupTasksWithSubtasks(tasks) {
   roots.sort(compareTasksForDisplay);
   for (const node of nodes) {
     if (node.subtasks.length > 1) {
-      node.subtasks.sort(compareTasksForDisplay);
+      node.subtasks.sort((a, b) => {
+        if (Boolean(a.completed) !== Boolean(b.completed)) {
+          return a.completed ? 1 : -1;
+        }
+        return compareTasksForDisplay(a, b);
+      });
     }
   }
 
   return roots;
+}
+
+export function getExpiredTaskIdsForCleanup(
+  tasks,
+  nowMs = Date.now(),
+  maxAgeMs = 48 * 60 * 60 * 1000
+) {
+  const cutoffMs = nowMs - maxAgeMs;
+  const taskById = new Map();
+  const childrenByParent = new Map();
+
+  for (const t of tasks) {
+    taskById.set(t.id, t);
+    if (t.parentId) {
+      if (!childrenByParent.has(t.parentId)) {
+        childrenByParent.set(t.parentId, []);
+      }
+      childrenByParent.get(t.parentId).push(t.id);
+    }
+  }
+
+  const expiredIds = new Set();
+
+  for (const task of tasks) {
+    const isExpired =
+      task.completed &&
+      typeof task.completedAtMs === "number" &&
+      task.completedAtMs > 0 &&
+      task.completedAtMs < cutoffMs;
+
+    if (!isExpired) continue;
+
+    if (!task.parentId) {
+      expiredIds.add(task.id);
+      const childIds = childrenByParent.get(task.id) || [];
+      for (const cid of childIds) {
+        expiredIds.add(cid);
+      }
+    } else if (!taskById.has(task.parentId)) {
+      // Orphaned subtask with no parent remaining
+      expiredIds.add(task.id);
+    }
+    // Subtasks belonging to an existing open parent are never deleted
+  }
+
+  return Array.from(expiredIds);
 }

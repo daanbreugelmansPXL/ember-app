@@ -26,13 +26,13 @@ export function LoginScreen({ onLogin, isLoggingIn, error }) {
           </div>
 
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-400/80">
-            Fase 1.3 · Eigen Taken &amp; Agenda Sync
+            Phase 1 · Tasks &amp; Calendar Sync
           </p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-100">
             EMBER
           </h1>
           <p className="mt-2.5 max-w-xs text-sm leading-relaxed text-slate-400">
-            Steek het vuur aan. Elke voltooide taak telt. Verbind je Google-account om je quests te synchroniseren.
+            Light the fire. Every finished task counts. Connect your Google account to sync with your calendar.
           </p>
         </div>
 
@@ -53,13 +53,13 @@ export function LoginScreen({ onLogin, isLoggingIn, error }) {
             disabled={isLoggingIn}
             className="group flex min-h-[44px] w-full cursor-pointer items-center justify-center gap-3 rounded-md border border-orange-400/40 bg-orange-600 px-5 py-3 text-sm font-semibold text-slate-950 shadow-lg shadow-orange-950/40 transition-colors hover:bg-orange-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <span>{isLoggingIn ? "Verbinden..." : "Inloggen met Google"}</span>
+            <span>{isLoggingIn ? "Signing in..." : "Sign In with Google"}</span>
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
           </button>
 
           <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
             <ShieldCheck className="h-3.5 w-3.5 text-slate-400" />
-            <span>One-way sync naar je primaire Google Agenda</span>
+            <span>One-way sync to your primary Google Calendar</span>
           </div>
         </div>
       </section>

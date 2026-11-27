@@ -1,78 +1,81 @@
-# BLUEPRINT — Ember (Gamified Productivity App) — v2
+# BLUEPRINT — Ember (v3 — Dynamic Quest Radar)
 
 ## 1. Visie & Kernprincipe
-Een lichtgewicht, gratis Progressive Web App (PWA) die het echte leven (school, werk, training en sociaal) gamifiet via een strakke dopamine-loop. Geen saaie to-do lijst met een pixel-art laagje, maar een volwassen, dynamische Life RPG.
+Ember is een lichtgewicht, gratis Progressive Web App (PWA) die studenten en drukbezette gebruikers met wisselende roosters helpt om lege tijd effectief om te zetten in voortgang — zónder de frictie en weerstand van rigide time-blocking. Eenvoudige voorkant, slimme rekenmotor achteraan, en een volwassen Dark Cozy Life RPG-laag.
 
 ### 2-App Architectuur (Leidend)
-- **Ember (Doen & Spelen):** Eigen taken-, gewoonte- en RPG-beheer opgeslagen in **Firebase Firestore** (`users/{uid}/tasks`, habits & profiel).
-- **Google Agenda (Overzicht):** One-way sync vanuit Ember naar de primaire Google Agenda (`primary`) via de **Google Calendar API** (`calendar.events` scope). Google Tasks API wordt **niet** meer gebruikt.
+- **Ember (Radar, Quests & Spel):** Eigen taken-, budget- en RPG-beheer in **Firebase Firestore** (met lokale offline-persistentie voor directe opstart op iPhone/PC).
+- **Google Agenda (Logistieke Radar):**
+  - **Schrijven (minimaal):** Ember schrijft **uitsluitend harde deadlines** naar de primaire agenda (`primary`). Geen opgedrongen werkmoment-blokken meer.
+  - **Lezen (slim):** Ember leest geselecteerde Google Agenda's van de gebruiker uit om automatisch de echte beschikbare focustijd te berekenen.
+- **Auth & Token-vernieuwing:** Multi-user **Cloudflare Worker + KV** beheert veilig per Firebase-gebruiker (`uid`) het Google OAuth Refresh Token, zodat herverbinden op Brave en iPhone PWA nooit meer nodig is.
 
 ## 2. Tech Stack (100% Gratis)
-- **Frontend:** React + Vite + Tailwind CSS (mobiel-first, responsive voor PC en iPhone PWA).
+- **Frontend:** React + Vite + Tailwind CSS (mobiel-first PWA + 2-koloms desktop layout).
 - **Hosting:** GitHub Pages.
-- **Database & Auth:** Firebase (Spark Plan — Firestore Database + Google Authentication).
-- **Agenda-sync:** Google Calendar API (one-way sync van Ember naar primaire Google Agenda).
+- **Database & Auth:** Firebase Spark Plan (Google Auth + Firestore met offline cache).
+- **Backend Proxy:** Cloudflare Workers + KV (Free Tier, multi-user OAuth token refresh).
+- **Agenda API:** Google Calendar API v3 (`calendar.events` + `calendar.calendarlist.readonly`).
 
-## 3. Visuele Stijl & Vibe
-- **Esthetiek:** "Dark Cozy" Pixel Art gecombineerd met een strakke, volwassen Dark Mode UI (diep donkerblauw, antraciet, obsidian glas-kaarten, warme oranje/koperen kampvuur-accenten, dunne gouden/zilveren randen).
-- **Verboden:** Geen pastelkleuren, geen kinderachtige ronde cartoon-knoppen, geen drukke tabbladenbalk onderaan en **geen emoji's** in agenda-titels of UI-labels. Gebruik strakke, universele tekst-notaties (`[DL]`, `[ ]`, `[✓]`) in Google Agenda en Lucide-iconen in de app.
-- **Microcopy:** Kort, scherp, motiverend en direct (bijv. *"Boss fight verloren. Tijd voor je Revenge Quest."*).
+## 3. Visuele Stijl & Schermhiërarchie
+- **Esthetiek:** Dark Cozy / Obsidian aesthetic (diep antraciet, subtiele glas-kaarten, warme kampvuur-accenten).
+- **Strikte regels:** Geen pastelkleuren, geen emoji's in UI of Google Agenda, geen drukke badge-overload. Gebruik uitsluitend `lucide-react` iconen in de app en strakke typografie in Google Agenda.
+- **Taalscheiding:** Vaste UI-labels, knoppen en meldingen in het **Engels**; gebruikersdata, categorieën en eigen instellingen vrij (standaard Nederlands/aanpasbaar).
+- **Mobiel-first Hiërarchie (geen scroll-muur):**
+  - Bovenaan: slanke **Statusbalk** (compacte levende vlam + Level + 5 hartjes) + één klikbare **Radar-pil** (bufferstatus + directe toegang tot `Shift Check`).
+  - Direct daaronder: **Smart Quest Board (Top 3)** zonder eerst te hoeven scrollen.
+- **Desktop:** 2-koloms layout (vaste zijbalk links met Hearth-status, Week Radar, filters en `New Task`; hoofdwerkruimte rechts met Quest Board, Deadlines/Boss Quests en Weekly Budgets).
 
-## 4. Taken, Dagdelen & Google Agenda Sync
-In plaats van handmatig tags intypen in een externe app, selecteert de gebruiker bij het aanmaken van een taak in Ember direct een grootte, categorie, optionele werkdag + dagdeel en/of harde deadline (twee aparte velden). Taken ondersteunen geneste subtaken, een Undo-toast bij afvinken en automatisch mee-afvinken van de hoofdtaak zodra de laatste subtaak af is.
+## 4. Accountinstellingen (Zero Hardcoding)
+Alle persoonlijke voorkeuren worden per gebruiker opgeslagen in Firestore (`users/{uid}/settings`), met slimme standaardwaarden bij eerste login:
+- **Beschikbaarheid:** Actieve uren (bijv. `09:00 – 22:00`) en een realistische **Max Focus Cap per dag** (bijv. `5u`).
+- **Vaste Rustblokken:** Terugkerende onbeschikbare uren (bijv. `12:00 – 13:00` lunch). **Harde regel:** echte Google Calendar-events worden wiskundig samengevoegd met rustblokken en overschrijven deze altijd waar ze uitlopen.
+- **Agenda-beheer (uit echte Google-agendalijst):** Per agenda instelbaar:
+  - Meerekenen als bezet (`aan`/`uit`).
+  - Optioneel trefwoordfilter (bijv. alleen events met `"Daan"` in de titel).
+  - Eigen **reistijd-buffer** in minuten (toegepast vóór en ná elk event uit die agenda).
+- **Online-uitzondering (0 min reistijd):** Aanpasbare lijst trefwoorden (standaard: `online, teams, zoom, remote`). Komt een trefwoord voor in titel of locatie van een event, dan vervalt de reistijd voor dat blok automatisch.
+- **Eigen Categorieën / Skills:** Gebruiker kan categorieën zelf aanmaken, hernoemen en verwijderen (met suggesties bij start: `Studie`, `Projecten`, `Health`, `Sociaal`, `Thuis`).
 
-### Google Agenda Weergave (in primaire agenda `primary`)
-- **Harde Deadlines:** Syncen als hele-dag-event bovenaan de deadline-dag met titel `[DL] <titel>` en vaste Google Calendar kleur `colorId: "11"` (Tomaat).
-- **Werkmomenten:** Syncen als concreet tijdsblok met titel `[ ] <titel>` zonder losse `colorId` (zodat het blok automatisch de custom HEX-kleur `#C97B4B` van de primaire agenda overneemt). Bij afvinken verandert de titel naar `[✓] <titel>`.
-- Eén taak met zowel een werkdag als een harde deadline maakt dus twee gekoppelde agenda-items aan die synchroon blijven bij bewerken, swappen of afvinken.
+## 5. Google Calendar Radar, Shift Simulator & Taken
+### Google Calendar Sync (Deadlines only)
+- Alleen taken met een harde deadline syncen naar `primary` als hele-dag-event bovenaan de dag met `colorId: "11"` (Tomaat).
+- **Titel-notatie:** `[!] (<size>) <volledige titel>` — **geen** kunstmatige karakter-afkapping.
+- **Beschrijving:** Bevat uitsluitend het `notes`-veld van de gebruiker (anders volledig leeg — nooit de titel herhalen).
+- Bij afvinken of verwijderen verdwijnt het agenda-event direct; klikken op **Undo** (`Ctrl+Z`, 6 sec) herstelt Firestore én Google Calendar volledig.
 
-### Slimme Dagdelen & Automatische Duur
-- **Voormiddag:** `09:00 – 12:00` (3u)
-- **Namiddag:** `13:00 – 16:00` (3u)
-- **Avond:** `18:30 – 22:00` (3u30)
-- **Nacht:** `22:00 – 24:00` (2u)
-- **Automatische duur op basis van taakgrootte:** `XS` = 15 min, `S` = 30 min, `M` = 1u, `L` = 2u, `XL` = 3u.
-- **Automatisch aansluiten & Vol-dagdeel bescherming:** Taken binnen hetzelfde dagdeel sluiten automatisch achter elkaar aan. Past een nieuwe taak niet meer in het venster, dan stopt de app netjes met een melding en twee keuzes: **Ander dagdeel kiezen** of **Passend maken (Auto-fit)** (blokken proportioneel verkleinen op stappen van 15 min, met een harde ondergrens van 15 min per taak).
-- **Directe 1-op-1 Swap:** Klik op Swap bij Taak A en tik op Taak B om direct hun dagdeel, positie en Google Agenda-tijden om te wisselen zonder de rest van de lijst te verschuiven.
+### Week Radar & Shift Simulator
+- Berekent voor de komende 14 dagen de echte vrije focustijd minus geactiveerde agenda-events, reistijden, rustblokken en openstaande Weekly Budgets, begrensd op de dagelijkse Max Focus Cap.
+- Vergelijkt per deadline het totaal openstaande werk tot die datum met de vrije focustijd en toont de bufferstatus (`Safe` / `Tight` / `Critical`).
+- **Shift Simulator (`Shift Check`):** Gebruiker tikt op een dag en test tijdelijk een extra bezet blok (bijv. `+4u` voor een werkshift) om direct zonder op te slaan de impact op alle deadlines te zien.
+- **Snel Blok Bezet (`+ Quick Busy Block`):** Tijdelijke handmatige bezet-override in Ember om vertragingen van externe `.ics`-agenda's (zoals Apple → Google) direct op te vangen.
 
-## 5. Grootte, XP, Gewoontes & Straffen
-Taken krijgen een grootte (`XS` t/m `XL`) en categorie (bijv. `Studie`, `Health`, `Projecten`, `Sociaal`, `Thuis`).
+### Taken, Subtaken & Kanban Quest Board
+- **Snelle *New Task* modal:** Toont direct alleen de kern (`Title`, `Size`, `Category`, `Priority`). Extra velden (`Hard Deadline`, `Notes`) zitten direct daaronder achter één compacte toggle.
+- **Subtaken:** Inklapbaar aan de linkerzijde met voortgangsteller. Deadline is standaard leeg en optioneel (met subtiele hint naar de deadline van de hoofdtaak). Afgevinkte subtaken blijven zichtbaar zolang de hoofdtaak openstaat. Bij laatste subtaak volgt een bevestigingstoast voor de hoofdtaak. Veilige 48u-opschoning verwijdert nooit subtaken van openstaande hoofdtaken.
+- **Smart Quest Board (Kanban-principe — max 3 slots):**
+  - Berekening op basis van deadline-urgentie, prioriteit (`Low`/`Normal`/`High`), **Aging-boost** (taken zonder deadline klimmen per wachtdag omhoog) en match met het huidige vrije tijdsgat.
+  - Slot 1 & 2 kiezen de hoogste urgentie; Slot 3 houdt ruimte voor een prioriteit/no-deadline/quick-win zodra de buffer niet op `Critical` staat. Bij weinig openstaande deadline-taken vullen taken zonder deadline automatisch alle vrije Kanban-plekken op.
+  - 1-tik energiefilter bovenaan (`Deep Focus`, `Quick Wins`, `Body/Social`).
+- **Keyboard Shortcuts (PC):** `N` (New Task), `Ctrl+Z` (Undo), `Esc` (Sluiten).
 
-| Grootte | Automatische Duur | Voorbeeld | XP Beloning |
-| :--- | :--- | :--- | :--- |
-| `XS` | 15 min | Kleine routine (bed opmaken, vitamines) | 15 XP |
-| `S` | 30 min | Korte mail, kleine opdracht | 35 XP |
-| `M` | 1 uur | Hoofdstuk leren, oefeningenreeks | 75 XP |
-| `L` | 2 uur | Zware opdracht, groot stuk project | 150 XP |
-| `XL` | 3 uur | Mega Quest (examen-voorbereiding, volledig deelproject) | 300 XP |
+## 6. Spelmotor & Psychologie (Fase 2)
+Gebaseerd op *Self-Determination Theory* (autonomie boven dwang), *Goal Gradient* en *Flow Theory*:
+- **Grootte, Duur & XP:** `XS` (15m · 15 XP), `S` (30m · 35 XP), `M` (1u · 75 XP), `L` (2u · 150 XP), `XL` (3u · 300 XP).
+- **Post-Session Focus Slider (`L` / `XL`):** Eerlijke 0–100% focus-slider bij afvinken bepaalt de XP-multiplier.
+- **Progressie:** Algemeen Level (`100 * (Level ^ 1.35)`, afgerond op veelvoud van 50) + per categorie een eigen Skill Rank (`Bronze` → `Silver` → `Gold` → `Diamond`).
+- **5 Hartjes (HP) & Auto-Hibernate:**
+  - HP-verlies uitsluitend bij een echte gemiste harde deadline (`-1`) of een als streng gemarkeerde gemiste Weekly Budget (`-0,5`).
+  - **Geen Curses, geen Campfire-boete en geen Sick Day-knop.** Bij afwezigheid/ziekte bevriest **Auto-Hibernate** de HP-klok automatisch; de streak reset eerlijk naar 0 en de speler keert zonder schuldgevoel terug via **`Relight the Fire`**.
+  - Herstel: `+0,5` hartje bij een 3-dagen streak of het verslaan van een Boss Quest; vol herstel bij een 7-dagen streak.
+- **Boss Quests:** Grote hoofdtaken (`L`/`XL` met subtaken) kunnen als Boss Quest worden gemarkeerd. Elke afgevinkte subtaak slaat zichtbaar HP van de Boss-balk af.
+- **Weekly Budgets (Variabele trainingen & Sociaal):** Flexibele weekdoelen (bijv. `Thuistraining · 3x 1u`, `Sociaal · 1x`) die automatisch als tijdsbudget in de Week Radar meetellen. 1-tik `[+ Log]` geeft direct XP en verlaagt het resterende weekbudget. Met een *Light Week*-schakelaar voor examenweken of blessures.
+- **The Hearth, Campfire Check-in & Chronicle:**
+  - Subtiel levend kampvuur dat meebeweegt met je momentum.
+  - Avondlijke **Campfire Check-in** (uitnodiging/buff, geen straf): 2 sliders (`Productivity` & `Energy`, 1–5) + korte 1-regel toelichting.
+  - **Chronicle (`users/{uid}/chronicle`):** Permanente opslag van check-ins + dagmetadata (voltooide taken, XP, bufferstatus), inclusief 14-dagen patroongrafiek en JSON-export.
 
-- **Grote taken (`L` / `XL`):** Geen verplichte Pomodoro-timer. Bij afvinken volgt een **Post-Session Review** (eerlijkheidsslider 0–100% focus) die de uiteindelijke XP-multiplier bepaalt.
-- **Tactical Shift (Geplande werkdag gemist, deadline nog niet voorbij):**
-  - 1e keer verplaatsen tijdens het Campfire Checkpoint = **gratis** (geen HP-verlies).
-  - 2e keer verplaatsen van exact dezelfde taak = **-0,5 hartje** (rem op uitstelgedrag).
-- **Harde deadline gemist:** Altijd **-1 vol hartje**, ongeacht de grootte van de taak.
-- **Vaste Gewoontes & Wekelijkse Quests (puur in Ember, geen agenda-vervuiling):**
-  - **Vaste Gewoontes:** Terugkerende afspraken op vaste dagen (bijv. Muay Thai) met 1-tik afvinken voor XP en een *Rustdag*-optie bij ziekte.
-  - **Wekelijkse Quests:** Flexibele weekdoelen zonder vaste uren (bijv. `Thuistraining 0/3`, `Sociaal / Iets leuks doen 0/1`) met een 1-tik `[+ Log]` knop voor directe XP, een kleine weekbonus bij behalen, en een optionele HP-straf (`-0,5` of `-1` hartje) bij de zondagse weekreset als het doel niet gehaald is.
-
-## 6. Progressie, HP & Game Over
-- **Algemeen Level:** Eén groot getal. Exponentiële curve: `Benodigde XP = 100 * (Level ^ 1.35)`, afgerond op het dichtstbijzijnde veelvoud van 50.
-- **Categorie Tiers:** Per categorie een badge/rank (Brons, Zilver, Goud, Diamant) zichtbaar op de Player Card.
-- **HP-systeem:** 5 hartjes (met halve hartjes = 10 stappen).
-  - Gemist Campfire Checkpoint = -1 vol hartje.
-  - Herstel: Boss Fight winnen of 7-dagen streak halen. (Géén 'streak freezes' of items die luiheid belonen).
-- **Boss Fights:** Op algemene level-mijlpalen (bijv. elke 10 levels). Dynamische challenge op basis van openstaande taken binnen 24–48 uur. Falen = **Curse** (-50% XP tot een Redemption Task is gehaald).
-- **0 HP (Game Over):** Harde reset (terug naar bodem van huidige tier/level-straf + actieve buffs weg). De **Legacy Player Card** (hoogste level, langste streak, badges) blijft behouden, en de speler krijgt direct een makkelijke **Revenge Quest** om weer op gang te komen.
-
-## 7. De Dagelijkse Loop & Meta-Game
-- **Anti-Cheat Streak:** Minstens 1 taak/quest afvinken ÉN het Campfire Checkpoint voltooien = Streak +1.
-- **Drie-eenheid op de vaste 2D Map (geen oneindig scrollen):**
-  1. **Tussendoor (Actief):** 1 Daily Encounter op de map na de eerste voltooide taak.
-  2. **'s Avonds (Ritueel):** **Campfire Checkpoint** (Tactical Shifts bepalen, inhaalslag kleine taken + 2 sliders 1–5 voor *Productiviteit* en *Energie/Gevoel* + subtiele *Chronicle*-knop voor 14-dagen grafiek & JSON-export) + **De Reizende Handelaar** (wisselende gear/upgrades kopen met verdiend goud).
-  3. **Altijd zichtbaar (Passief):** Gebouwen en paden upgraden visueel van ruïne naar fort op dezelfde vaste map, met automatische seizoenseffecten op basis van de datum.
-- **Character:** Simpele basiskeuze bij start (huidskleur, silhouet, basiskleur); status-gear vrijspelen via goud. Waypoint-beweging over paden naar locaties (Kampvuur, Bibliotheek, Gym, etc.).
-
-## 8. Bouwfasen (Strikt aanhouden)
-- **Fase 1 (Skelet, Eigen Taken & Agenda Sync):** Google Login, Firestore profiel, eigen takenbeheer in Firestore (met subtaken, dagdelen, harde deadlines, Undo, auto-complete hoofdtaak, vol-dagdeel bescherming en 1-op-1 Swap) + one-way sync naar Google Agenda.
-- **Fase 2 (Spelmotor):** XP/Level-curve, 5 hartjes, Tactical Shift & deadline-straffen, categorie-tiers, Post-Session Review, Vaste Gewoontes & Wekelijkse Quests, Campfire Checkpoint & Chronicle.
-- **Fase 3 (De Map & Juice):** Vaste 2D Dark Cozy Map, wandelend poppetje, Reizende Handelaar, Daily Encounters, Boss Fights, seizoenen, animaties/juice en Player Card.
+## 7. Bouwfasen (Strikt aanhouden)
+- **Fase 1 (Fundering & Model B Motor):** Multi-user Cloudflare Worker (OAuth refresh), Accountinstellingen (Zero Hardcoding), Google Calendar Reader + Deadline Writer, Week Radar, Shift Simulator en Kanban Quest Board.
+- **Fase 2 (Spelmotor & Psychologie):** The Hearth, XP/Levels, Skill Ranks, 5 Hartjes + Auto-Hibernate, Boss Quests, Post-Session Slider, Weekly Budgets en Campfire Check-in + Chronicle.
+- **Fase 3 (Polish & Juice):** Verfijnde kampvuur-animaties, micro-interacties, subtiele optionele sound-feedback, uitgebreide Chronicle-inzichten en PWA-finishing touch.

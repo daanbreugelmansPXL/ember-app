@@ -1,11 +1,21 @@
-import { addDaysToDateString, toBrusselsRfc3339 } from "../utils/schedule";
+import {
+  addDaysToDateString,
+  toBrusselsRfc3339,
+} from "../utils/schedule.js";
 
-const CALENDAR_EVENTS_BASE =
-  "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+const CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3";
+const PRIMARY_EVENTS_BASE = `${CALENDAR_API_BASE}/calendars/primary/events`;
+
+const brusselsDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Brussels",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
 export class CalendarAuthError extends Error {
   constructor(
-    message = "Google Agenda sessie is verlopen of niet verbonden.",
+    message = "Google Calendar session expired or disconnected.",
     status = 401
   ) {
     super(message);
@@ -16,7 +26,7 @@ export class CalendarAuthError extends Error {
 
 async function calendarRequest(url, accessToken, options = {}) {
   if (!accessToken) {
-    throw new CalendarAuthError("Geen actief Google OAuth token gevonden.", 401);
+    throw new CalendarAuthError("No active Google OAuth token found.", 401);
   }
 
   const response = await fetch(url, {
@@ -30,7 +40,7 @@ async function calendarRequest(url, accessToken, options = {}) {
 
   if (response.status === 401 || response.status === 403) {
     throw new CalendarAuthError(
-      "Google Agenda toegang is verlopen of geweigerd.",
+      "Google Calendar authorization expired or denied.",
       response.status
     );
   }
@@ -42,7 +52,7 @@ async function calendarRequest(url, accessToken, options = {}) {
   if (!response.ok) {
     const errorBody = await response.text().catch(() => "");
     const error = new Error(
-      `Google Calendar API fout (${response.status}): ${errorBody || response.statusText}`
+      `Google Calendar API error (${response.status}): ${errorBody || response.statusText}`
     );
     error.status = response.status;
     throw error;
@@ -51,27 +61,155 @@ async function calendarRequest(url, accessToken, options = {}) {
   return response.json();
 }
 
-export function buildWorkEventPayload(task, slot) {
-  const prefix = task.completed ? "[✓]" : "[ ]";
-  return {
-    summary: `${prefix} ${task.title}`,
-    start: {
-      dateTime: toBrusselsRfc3339(task.workDate, slot.startMin),
-      timeZone: "Europe/Brussels",
-    },
-    end: {
-      dateTime: toBrusselsRfc3339(task.workDate, slot.endMin),
-      timeZone: "Europe/Brussels",
-    },
-  };
+export async function fetchCalendarList(accessToken) {
+  const items = [];
+  let pageToken = "";
+
+  do {
+    const url = new URL(`${CALENDAR_API_BASE}/users/me/calendarList`);
+    url.searchParams.set("maxResults", "250");
+    if (pageToken) {
+      url.searchParams.set("pageToken", pageToken);
+    }
+
+    const data = await calendarRequest(url.toString(), accessToken);
+    if (Array.isArray(data?.items)) {
+      for (const item of data.items) {
+        if (!item?.id || item.deleted) continue;
+        items.push({
+          id: item.id,
+          summary: item.summaryOverride || item.summary || item.id,
+          primary: Boolean(item.primary),
+          backgroundColor: item.backgroundColor || null,
+          accessRole: item.accessRole || "reader",
+        });
+      }
+    }
+    pageToken = data?.nextPageToken || "";
+  } while (pageToken);
+
+  items.sort((a, b) => {
+    if (a.primary !== b.primary) return a.primary ? -1 : 1;
+    return a.summary.localeCompare(b.summary);
+  });
+
+  return items;
+}
+
+async function fetchSingleCalendarEvents(
+  accessToken,
+  calendarId,
+  rule,
+  timeMin,
+  timeMax
+) {
+  const events = [];
+  let pageToken = "";
+  const keyword =
+    typeof rule?.keywordFilter === "string"
+      ? rule.keywordFilter.trim().toLowerCase()
+      : "";
+  const rawTravel = Number(rule?.travelMinutes);
+  const travelMinutes = Number.isFinite(rawTravel)
+    ? Math.max(0, Math.round(rawTravel))
+    : 0;
+
+  try {
+    do {
+      const url = new URL(
+        `${CALENDAR_API_BASE}/calendars/${encodeURIComponent(calendarId)}/events`
+      );
+      url.searchParams.set("singleEvents", "true");
+      url.searchParams.set("orderBy", "startTime");
+      url.searchParams.set("timeMin", timeMin);
+      url.searchParams.set("timeMax", timeMax);
+      url.searchParams.set("maxResults", "2500");
+      if (pageToken) {
+        url.searchParams.set("pageToken", pageToken);
+      }
+
+      const data = await calendarRequest(url.toString(), accessToken);
+      if (Array.isArray(data?.items)) {
+        for (const event of data.items) {
+          if (!event) continue;
+          if (event.status === "cancelled") continue;
+          if (!event.start?.dateTime || !event.end?.dateTime) continue;
+          if (event.transparency === "transparent") continue;
+
+          const summary = typeof event.summary === "string" ? event.summary : "";
+          if (keyword && !summary.toLowerCase().includes(keyword)) {
+            continue;
+          }
+
+          events.push({
+            id: event.id || `${calendarId}-${event.start.dateTime}`,
+            calendarId,
+            summary,
+            location: typeof event.location === "string" ? event.location : "",
+            startDateTime: event.start.dateTime,
+            endDateTime: event.end.dateTime,
+            travelMinutes,
+          });
+        }
+      }
+
+      pageToken = data?.nextPageToken || "";
+    } while (pageToken);
+  } catch (err) {
+    if (err instanceof CalendarAuthError) {
+      throw err;
+    }
+    if (err?.status === 404 || err?.status === 410) {
+      return [];
+    }
+    throw err;
+  }
+
+  return events;
+}
+
+export async function fetchUpcomingBusyEvents(
+  accessToken,
+  calendarRules = {},
+  options = {}
+) {
+  const { days = 14, now = new Date() } = options;
+
+  const enabledEntries = Object.entries(calendarRules || {}).filter(
+    ([calendarId, rule]) => Boolean(calendarId && rule?.enabled === true)
+  );
+  if (enabledEntries.length === 0) {
+    return [];
+  }
+
+  const todayStr = brusselsDateFormatter.format(now);
+  const timeMin = toBrusselsRfc3339(todayStr, 0);
+  const timeMax = toBrusselsRfc3339(addDaysToDateString(todayStr, days), 0);
+
+  const perCalendarLists = await Promise.all(
+    enabledEntries.map(([calendarId, rule]) =>
+      fetchSingleCalendarEvents(accessToken, calendarId, rule, timeMin, timeMax)
+    )
+  );
+
+  const merged = perCalendarLists.flat();
+  merged.sort(
+    (a, b) =>
+      new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime()
+  );
+  return merged;
+}
+
+export function formatDeadlineSummary(task) {
+  const size = task?.size || "M";
+  const title = typeof task?.title === "string" ? task.title.trim() : "";
+  return `[!] (${size}) ${title}`;
 }
 
 export function buildDeadlineEventPayload(task) {
-  const summary = task.completed
-    ? `[✓] [DL] ${task.title}`
-    : `[DL] ${task.title}`;
   return {
-    summary,
+    summary: formatDeadlineSummary(task),
+    description: typeof task?.notes === "string" ? task.notes : "",
     start: {
       date: task.deadline,
     },
@@ -79,6 +217,7 @@ export function buildDeadlineEventPayload(task) {
       date: addDaysToDateString(task.deadline, 1),
     },
     colorId: "11",
+    transparency: "transparent",
   };
 }
 
@@ -86,7 +225,7 @@ export async function upsertEvent(accessToken, eventId, payload) {
   if (eventId) {
     try {
       const updated = await calendarRequest(
-        `${CALENDAR_EVENTS_BASE}/${encodeURIComponent(eventId)}`,
+        `${PRIMARY_EVENTS_BASE}/${encodeURIComponent(eventId)}`,
         accessToken,
         {
           method: "PATCH",
@@ -104,7 +243,7 @@ export async function upsertEvent(accessToken, eventId, payload) {
     }
   }
 
-  const created = await calendarRequest(CALENDAR_EVENTS_BASE, accessToken, {
+  const created = await calendarRequest(PRIMARY_EVENTS_BASE, accessToken, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -118,7 +257,7 @@ export async function deleteEvent(accessToken, eventId) {
   if (!eventId) return;
   try {
     await calendarRequest(
-      `${CALENDAR_EVENTS_BASE}/${encodeURIComponent(eventId)}`,
+      `${PRIMARY_EVENTS_BASE}/${encodeURIComponent(eventId)}`,
       accessToken,
       {
         method: "DELETE",
@@ -131,40 +270,50 @@ export async function deleteEvent(accessToken, eventId) {
   }
 }
 
-export async function syncTaskCalendarEvents(accessToken, task, slot) {
-  let nextWorkId = task.calendarWorkEventId || null;
-  let nextDeadlineId = task.calendarDeadlineEventId || null;
-
-  if (task.workDate && task.timeBlock && slot) {
-    const workPayload = buildWorkEventPayload(task, slot);
-    nextWorkId = await upsertEvent(
-      accessToken,
-      task.calendarWorkEventId,
-      workPayload
-    );
-  } else if (task.calendarWorkEventId) {
-    await deleteEvent(accessToken, task.calendarWorkEventId);
-    nextWorkId = null;
+export async function syncTaskCalendarEvents(accessToken, task) {
+  if (!task) {
+    return {
+      calendarWorkEventId: null,
+      calendarDeadlineEventId: null,
+      changed: false,
+    };
   }
 
+  const prevWorkId = task.calendarWorkEventId || null;
+  const prevDeadlineId = task.calendarDeadlineEventId || null;
+
+  if (prevWorkId) {
+    await deleteEvent(accessToken, prevWorkId);
+  }
+
+  if (task.completed) {
+    if (prevDeadlineId) {
+      await deleteEvent(accessToken, prevDeadlineId);
+    }
+    return {
+      calendarWorkEventId: null,
+      calendarDeadlineEventId: null,
+      changed: Boolean(prevWorkId || prevDeadlineId),
+    };
+  }
+
+  let nextDeadlineId = prevDeadlineId;
   if (task.deadline) {
     const deadlinePayload = buildDeadlineEventPayload(task);
     nextDeadlineId = await upsertEvent(
       accessToken,
-      task.calendarDeadlineEventId,
+      prevDeadlineId,
       deadlinePayload
     );
-  } else if (task.calendarDeadlineEventId) {
-    await deleteEvent(accessToken, task.calendarDeadlineEventId);
+  } else if (prevDeadlineId) {
+    await deleteEvent(accessToken, prevDeadlineId);
     nextDeadlineId = null;
   }
 
   return {
-    calendarWorkEventId: nextWorkId,
+    calendarWorkEventId: null,
     calendarDeadlineEventId: nextDeadlineId,
-    changed:
-      nextWorkId !== (task.calendarWorkEventId || null) ||
-      nextDeadlineId !== (task.calendarDeadlineEventId || null),
+    changed: Boolean(prevWorkId) || nextDeadlineId !== prevDeadlineId,
   };
 }
 
